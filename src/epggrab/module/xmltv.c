@@ -875,12 +875,13 @@ static int _xmltv_parse_programme
      (attribs = htsmsg_get_map(subtag,  "attrib")) != NULL)
     icon = htsmsg_get_str(attribs, "src");
 
-  if(stop <= start || stop <= gclk()) return 0;
+  if(stop <= start) return 0;
 
   ec->laststamp = gclk();
   LIST_FOREACH(ilm, &ec->channels, ilm_in1_link) {
     ch = (channel_t *)ilm->ilm_in2;
     if (!ch->ch_enabled || ch->ch_epg_parent) continue;
+	if(stop <= gclk() - ch->ch_epg_limit * 3600 * 24) return 0;
     save |= _xmltv_parse_programme_tags(mod, ch, tags,
                                         start, stop, icon, stats);
   }
