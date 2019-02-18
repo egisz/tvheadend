@@ -510,15 +510,16 @@ static void _epg_channel_timer_callback ( void *p )
   ch->ch_epg_now = ch->ch_epg_next = NULL;
 
   /* Check events */
-  while ((ebc = RB_FIRST(&ch->ch_epg_schedule))) {
+  RB_FOREACH(ebc, &ch->ch_epg_schedule, sched_link) {
 
     /* Expire */
-    if ( ebc->stop <= gclk() ) {
-      tvhdebug(LS_EPG, "expire event %u (%s) from %s",
-               ebc->id, epg_broadcast_get_title(ebc, NULL),
-               channel_get_name(ch, channel_blank_name));
+    if (ebc->stop <= gclk() - ch->ch_epg_limit * 3600 * 24 ) {
       _epg_channel_rem_broadcast(ch, ebc, NULL);
       continue; // skip to next
+
+    /* Expired event, but we keep it */
+    } else if (ebc->stop <= gclk()) {
+       continue;
 
     /* No now */
     } else if (ebc->start > gclk()) {
@@ -943,7 +944,7 @@ epg_broadcast_t *epg_broadcast_find_by_time
   epg_broadcast_t **ebc;
   if (!channel || !start || !stop) return NULL;
   if (stop <= start) return NULL;
-  if (stop <= gclk()) return NULL;
+  if (stop <= gclk() - channel->ch_epg_limit * 3600 * 24 ) return NULL;
 
   ebc = _epg_broadcast_skel();
   (*ebc)->start   = start;
@@ -1614,22 +1615,22 @@ epg_broadcast_t *epg_broadcast_deserialize
   int64_t start, stop, s64;
   epg_episode_num_t num;
 
+  /* Get channel */
+  if ((str = htsmsg_get_str(m, "ch")))
+    ch = channel_find(str);
+  if (!ch) return NULL;
+
   if (htsmsg_get_s64(m, "start", &start)) return NULL;
   if (htsmsg_get_s64(m, "stop", &stop)) return NULL;
   if (!start || !stop) return NULL;
   if (stop <= start) return NULL;
-  if (stop <= gclk()) return NULL;
+  if (stop <= gclk() - ch->ch_epg_limit * - 3600 * 24) return NULL;
 
   _epg_object_deserialize(m, (epg_object_t*)*skel);
 
   /* Set properties */
   (*skel)->start   = start;
   (*skel)->stop    = stop;
-
-  /* Get channel */
-  if ((str = htsmsg_get_str(m, "ch")))
-    ch = channel_find(str);
-  if (!ch) return NULL;
 
   /* Create */
   ebc = _epg_channel_add_broadcast(ch, skel, (*skel)->grabber, create, save, &changes);
@@ -2142,7 +2143,7 @@ _eq_add ( epg_query_t *eq, epg_broadcast_t *e )
 
   /* Filtering */
   if (e == NULL) return;
-  if (e->stop < gclk()) return;
+  if (e->stop < gclk() - e->channel->ch_epg_limit * 3600 * 24) return;
   if (_eq_comp_num(&eq->start, e->start)) return;
   if (_eq_comp_num(&eq->stop, e->stop)) return;
   if (eq->duration.comp != EC_NO) {
